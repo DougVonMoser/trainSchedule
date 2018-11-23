@@ -1,0 +1,12 @@
+.container {
+    
+}   
+
+.top {
+    height: 18vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: xx-large;
+    border: solid black 1px;
+}
