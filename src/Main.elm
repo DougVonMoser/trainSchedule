@@ -1,8 +1,8 @@
 module Main exposing (..)
 
 import Browser
-import Html exposing (Html, div, text)
-import Html.Attributes exposing (class)
+import Html exposing (Html, div, text, span)
+import Html.Attributes exposing (class, style)
 import Task
 import Time exposing (Posix, Zone)
 
@@ -58,33 +58,54 @@ update msg model =
             ( { model | zone = zone }, Cmd.none )
 
 
-getTimeTitle : Zone -> Posix -> String
-getTimeTitle zone posix =
-    [ Time.toHour, Time.toMinute, Time.toSecond ]
+getTimeTitle : List (Zone -> Posix -> Int) -> Zone -> Posix -> String
+getTimeTitle conversionList zone posix =
+    conversionList
         |> List.map (\f -> f zone posix |> String.fromInt |> String.padLeft 2 '0')
         |> String.join ":"
 
 
-trainView : String -> Int -> Html Msg
-trainView displayTime tillNext =
-    div []
-        [ text displayTime
-        , text (" " ++ String.fromInt tillNext ++ " mins")
-        ]
+findClosenessColor : Int -> String
+findClosenessColor num =
+    if num < 5 then
+        "red"
+    else if num < 10 then
+        "yellow"
+    else
+        "green"
 
 
-something : Train -> Posix
-something train =
-    case train of
-        Train dest dep arr ->
-            dep
+trainView : ( String, Int ) -> Html Msg
+trainView ( displayTime, tillNext ) =
+    let
+        color =
+            findClosenessColor tillNext
+    in
+        div [ class "train", style "border-color" color ]
+            [ span [] [ text displayTime ]
+            , span [] [ text (" " ++ String.fromInt tillNext ++ " mins") ]
+            ]
 
 
 findEligbleTrains : Zone -> Posix -> List Train -> List (Html Msg)
 findEligbleTrains zone posix schedule =
-    List.map something schedule
-        |> List.map (getTimeTitle zone)
-        |> List.map (\x -> trainView x 8)
+    let
+        subtractPosix x y =
+            ((Time.posixToMillis x - Time.posixToMillis y) + (60 * 1000))
+    in
+        List.filter (\(Train dest dep arr) -> dest == Ogilvie) schedule
+            |> List.map (\(Train dest dep arr) -> dep)
+            |> List.filter (\x -> (<) 0 (subtractPosix x posix))
+            |> List.map
+                (\x ->
+                    ( getTimeTitle [ Time.toHour, Time.toMinute ] zone x
+                    , Time.toMinute zone
+                        (Time.millisToPosix
+                            (subtractPosix x posix)
+                        )
+                    )
+                )
+            |> List.map trainView
 
 
 view : Model -> Html Msg
@@ -98,7 +119,7 @@ view model =
     in
         div [ class "container" ]
             [ div [ class "top" ]
-                [ text (getTimeTitle model.zone model.now)
+                [ text (getTimeTitle [ Time.toHour, Time.toMinute, Time.toSecond ] model.zone model.now)
                 ]
             , div [ class "rest" ] (findEligbleTrains model.zone model.now schedule)
             ]
@@ -159,8 +180,11 @@ stringToPosix lastMidnight offset string =
 
 createSchedule : Posix -> Int -> List Train
 createSchedule lastMidnight offset =
-    [ { destination = Ogilvie, departingTime = "6:57AM", arrivingTime = "7:55AM" }
-    , { destination = Ogilvie, departingTime = "6:49AM", arrivingTime = "7:41AM" }
+    [ { destination = Ogilvie, departingTime = "6:49AM", arrivingTime = "7:41AM" }
+    , { destination = Ogilvie, departingTime = "6:57AM", arrivingTime = "7:55AM" }
+    , { destination = Ogilvie, departingTime = "7:20AM", arrivingTime = "8:01AM" }
+    , { destination = Ogilvie, departingTime = "7:24AM", arrivingTime = "8:26AM" }
+    , { destination = Ogilvie, departingTime = "7:51AM", arrivingTime = "8:36AM" }
     , { destination = Palatine, departingTime = "4:57PM", arrivingTime = "5:39PM" }
     , { destination = Palatine, departingTime = "5:16PM", arrivingTime = "5:55PM" }
     ]

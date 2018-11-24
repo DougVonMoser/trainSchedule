@@ -7,6 +7,20 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: xx-large;
-    border: solid black 1px;
+    font-size: 48px;
+}
+
+.rest {
+    height: 80vh;
+    overflow-x: scroll;
+
+}
+.train {
+    display: flex;
+    justify-content: space-between; 
+    border: solid 8px;
+    margin : 8px 0;
+    font-size: large;
+    padding: 16px;
+
 }
