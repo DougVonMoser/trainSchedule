@@ -11,7 +11,8 @@ type alias Model =
     { now : Posix
     , zone : Zone
     , lastMidnight : Posix
-    , zoneOffset : Int
+    , defaultDestination : Destination
+    , schedule : List Train
     }
 
 
@@ -20,7 +21,8 @@ initialModel =
     { now = Time.millisToPosix 0
     , zone = Time.utc
     , lastMidnight = Time.millisToPosix 0
-    , zoneOffset = 6
+    , defaultDestination = Ogilvie
+    , schedule = []
     }
 
 
@@ -38,29 +40,59 @@ type Msg
     | GotZone Zone
 
 
+{-| Given a datetime, set the time to 00:00:00.000
+-}
+resetTime : Posix -> Posix
+resetTime time =
+    time
+        |> Time.posixToMillis
+        |> (\millis -> millis // (1000 * 60 * 60 * 24))
+        |> (*) (1000 * 60 * 60 * 24)
+        |> Time.millisToPosix
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         GotTime posix ->
             let
-                millis =
-                    Time.posixToMillis posix
+                defaultDest =
+                    if Time.toHour model.zone model.now > 11 then
+                        Palatine
+                    else
+                        Ogilvie
 
-                lastMidnight =
-                    millis - (modBy 86400000 millis) |> Time.millisToPosix
+                rawMidnight =
+                    resetTime model.now
 
                 zoneOffset =
-                    (24 - (Time.toHour model.zone lastMidnight))
+                    Time.toHour model.zone rawMidnight - 24
+
+                lastUserZoneMidnight =
+                    Time.posixToMillis posix
+                        + (zoneOffset * 3600000)
+                        |> Time.millisToPosix
+                        |> resetTime
+
+                schedule =
+                    createSchedule lastUserZoneMidnight zoneOffset
             in
-                ( { model | now = posix, lastMidnight = lastMidnight, zoneOffset = zoneOffset }, Cmd.none )
+                ( { model
+                    | now = posix
+                    , lastMidnight = lastUserZoneMidnight
+                    , defaultDestination = defaultDest
+                    , schedule = schedule
+                  }
+                , Cmd.none
+                )
 
         GotZone zone ->
             ( { model | zone = zone }, Cmd.none )
 
 
 getTimeTitle : List (Zone -> Posix -> Int) -> Zone -> Posix -> String
-getTimeTitle conversionList zone posix =
-    conversionList
+getTimeTitle conversionFList zone posix =
+    conversionFList
         |> List.map (\f -> f zone posix |> String.fromInt |> String.padLeft 2 '0')
         |> String.join ":"
 
@@ -87,15 +119,15 @@ trainView ( displayTime, tillNext ) =
             ]
 
 
-findEligbleTrains : Zone -> Posix -> List Train -> List (Html Msg)
-findEligbleTrains zone posix schedule =
+findEligbleTrains : Zone -> Posix -> List Train -> Destination -> List (Html Msg)
+findEligbleTrains zone posix schedule defaultDest =
     let
         subtractPosix x y =
             ((Time.posixToMillis x - Time.posixToMillis y) + (60 * 1000))
     in
-        List.filter (\(Train dest dep arr) -> dest == Ogilvie) schedule
+        List.filter (\(Train dest dep arr) -> dest == defaultDest) schedule
             |> List.map (\(Train dest dep arr) -> dep)
-            |> List.filter (\x -> (<) 0 (subtractPosix x posix))
+            |> List.filter (\x -> (subtractPosix x posix) > 0)
             |> List.map
                 (\x ->
                     ( getTimeTitle [ Time.toHour, Time.toMinute ] zone x
@@ -113,15 +145,12 @@ view model =
     let
         defaultDestination =
             Palatine
-
-        schedule =
-            createSchedule model.lastMidnight model.zoneOffset
     in
         div [ class "container" ]
             [ div [ class "top" ]
                 [ text (getTimeTitle [ Time.toHour, Time.toMinute, Time.toSecond ] model.zone model.now)
                 ]
-            , div [ class "rest" ] (findEligbleTrains model.zone model.now schedule)
+            , div [ class "rest" ] (findEligbleTrains model.zone model.now model.schedule model.defaultDestination)
             ]
 
 
@@ -158,13 +187,13 @@ stringToPosix lastMidnight offset string =
         string
             |> String.dropRight 2
             |> String.split ":"
-            |> List.map String.toInt
+            |> List.map (String.toInt >> Maybe.withDefault 0)
             |> List.indexedMap
                 (\n y ->
                     if n == 0 then
-                        (Maybe.withDefault 1 y * 3600000)
+                        y * 3600000
                     else
-                        (Maybe.withDefault 1 y * 60000)
+                        y * 60000
                 )
             |> List.foldl (+) 0
             |> (\int ->
@@ -174,7 +203,7 @@ stringToPosix lastMidnight offset string =
                         int
                )
             |> (+) (Time.posixToMillis lastMidnight)
-            |> (+) (offset * 3600000)
+            |> (\x -> x + (-offset * 3600000))
             |> Time.millisToPosix
 
 
@@ -185,6 +214,7 @@ createSchedule lastMidnight offset =
     , { destination = Ogilvie, departingTime = "7:20AM", arrivingTime = "8:01AM" }
     , { destination = Ogilvie, departingTime = "7:24AM", arrivingTime = "8:26AM" }
     , { destination = Ogilvie, departingTime = "7:51AM", arrivingTime = "8:36AM" }
+    , { destination = Palatine, departingTime = "4:39PM", arrivingTime = "5:31PM" }
     , { destination = Palatine, departingTime = "4:57PM", arrivingTime = "5:39PM" }
     , { destination = Palatine, departingTime = "5:16PM", arrivingTime = "5:55PM" }
     ]
