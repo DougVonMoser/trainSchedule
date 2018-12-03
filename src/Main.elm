@@ -1,10 +1,11 @@
-module Main exposing (..)
+module Main exposing (main)
 
 import Browser
 import Html exposing (Html, div, text, span)
 import Html.Attributes exposing (class, style)
 import Task
 import Time exposing (Posix, Zone)
+import Utils exposing (flip, resetTime)
 
 
 type alias Model =
@@ -40,17 +41,6 @@ type Msg
     | GotZone Zone
 
 
-{-| Given a datetime, set the time to 00:00:00.000
--}
-resetTime : Posix -> Posix
-resetTime time =
-    time
-        |> Time.posixToMillis
-        |> (\millis -> millis // (1000 * 60 * 60 * 24))
-        |> (*) (1000 * 60 * 60 * 24)
-        |> Time.millisToPosix
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -62,11 +52,10 @@ update msg model =
                     else
                         Ogilvie
 
-                rawMidnight =
-                    resetTime model.now
-
                 zoneOffset =
-                    Time.toHour model.zone rawMidnight - 24
+                    resetTime model.now
+                        |> Time.toHour model.zone
+                        |> flip (-) 24
 
                 lastUserZoneMidnight =
                     Time.posixToMillis posix
@@ -120,21 +109,19 @@ trainView ( displayTime, tillNext ) =
 
 
 findEligbleTrains : Zone -> Posix -> List Train -> Destination -> List (Html Msg)
-findEligbleTrains zone posix schedule defaultDest =
+findEligbleTrains zone now schedule defaultDest =
     let
-        subtractPosix x y =
-            ((Time.posixToMillis x - Time.posixToMillis y) + (60 * 1000))
+        subtractNowFrom x =
+            ((Time.posixToMillis x - Time.posixToMillis now) + (60 * 1000))
     in
-        List.filter (\(Train dest dep arr) -> dest == defaultDest) schedule
-            |> List.map (\(Train dest dep arr) -> dep)
-            |> List.filter (\x -> (subtractPosix x posix) > 0)
+        List.filter (\(Train dest _ _) -> dest == defaultDest) schedule
+            |> List.map (\(Train _ dep _) -> dep)
+            |> List.filter (subtractNowFrom >> (<) 0)
             |> List.map
                 (\x ->
                     ( getTimeTitle [ Time.toHour, Time.toMinute ] zone x
-                    , Time.toMinute zone
-                        (Time.millisToPosix
-                            (subtractPosix x posix)
-                        )
+                    , subtractNowFrom x
+                        |> flip (//) (60 * 1000)
                     )
                 )
             |> List.map trainView
@@ -142,16 +129,12 @@ findEligbleTrains zone posix schedule defaultDest =
 
 view : Model -> Html Msg
 view model =
-    let
-        defaultDestination =
-            Palatine
-    in
-        div [ class "container" ]
-            [ div [ class "top" ]
-                [ text (getTimeTitle [ Time.toHour, Time.toMinute, Time.toSecond ] model.zone model.now)
-                ]
-            , div [ class "rest" ] (findEligbleTrains model.zone model.now model.schedule model.defaultDestination)
+    div [ class "container" ]
+        [ div [ class "top" ]
+            [ text (getTimeTitle [ Time.toHour, Time.toMinute, Time.toSecond ] model.zone model.now)
             ]
+        , div [ class "rest" ] (findEligbleTrains model.zone model.now model.schedule model.defaultDestination)
+        ]
 
 
 main =
@@ -214,6 +197,8 @@ createSchedule lastMidnight offset =
     , { destination = Ogilvie, departingTime = "7:20AM", arrivingTime = "8:01AM" }
     , { destination = Ogilvie, departingTime = "7:24AM", arrivingTime = "8:26AM" }
     , { destination = Ogilvie, departingTime = "7:51AM", arrivingTime = "8:36AM" }
+    , { destination = Ogilvie, departingTime = "8:25AM", arrivingTime = "9:25AM" }
+    , { destination = Ogilvie, departingTime = "9:25AM", arrivingTime = "10:25AM" }
     , { destination = Palatine, departingTime = "4:39PM", arrivingTime = "5:31PM" }
     , { destination = Palatine, departingTime = "4:57PM", arrivingTime = "5:39PM" }
     , { destination = Palatine, departingTime = "5:16PM", arrivingTime = "5:55PM" }
